@@ -6,6 +6,7 @@
 *.dylib
 *.dll
 *.exe
+mini-redis
 
 # Folders often used for binary output
 # (If you build to a specific folder, e.g., 'go build -o bin/main')
