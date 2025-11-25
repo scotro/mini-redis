@@ -54,3 +54,6 @@ vendor/
 # Windows
 Thumbs.db
 ehthumbs.db
+
+# Git Worktrees for AI Concurrency Workflow
+worktrees/
