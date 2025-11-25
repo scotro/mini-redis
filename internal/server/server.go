@@ -109,7 +109,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 		value, err := resp.Parse(reader)
 		if err != nil {
-			if err.Error() != "EOF" {
+			if err != resp.ErrUnexpectedEOF {
 				log.Printf("Error parsing command: %v", err)
 			}
 			return
@@ -122,12 +122,12 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 func (s *Server) executeCommand(value resp.Value) resp.Value {
 	if value.Type != resp.TypeArray || len(value.Array) == 0 {
-		return resp.Error("ERR invalid command format")
+		return respError("ERR invalid command format")
 	}
 
 	cmdVal := value.Array[0]
 	if cmdVal.Type != resp.TypeBulkString {
-		return resp.Error("ERR invalid command name")
+		return respError("ERR invalid command name")
 	}
 
 	cmd := strings.ToUpper(cmdVal.Str)
@@ -149,43 +149,64 @@ func (s *Server) executeCommand(value resp.Value) resp.Value {
 	case "TTL":
 		return s.handleTTL(args)
 	default:
-		return resp.Error(fmt.Sprintf("ERR unknown command '%s'", cmd))
+		return respError(fmt.Sprintf("ERR unknown command '%s'", cmd))
 	}
+}
+
+// RESP helper functions
+func respSimpleString(s string) resp.Value {
+	return resp.Value{Type: resp.TypeSimpleString, Str: s}
+}
+
+func respError(s string) resp.Value {
+	return resp.Value{Type: resp.TypeError, Str: s}
+}
+
+func respInteger(n int) resp.Value {
+	return resp.Value{Type: resp.TypeInteger, Num: n}
+}
+
+func respBulkString(s string) resp.Value {
+	return resp.Value{Type: resp.TypeBulkString, Str: s}
+}
+
+func respNullBulkString() resp.Value {
+	return resp.Value{Type: resp.TypeBulkString, Null: true}
 }
 
 func (s *Server) handlePing(args []resp.Value) resp.Value {
 	if len(args) == 0 {
-		return resp.SimpleString("PONG")
+		return respSimpleString("PONG")
 	}
 	if len(args) == 1 {
-		return resp.BulkString(args[0].Str)
+		return respBulkString(args[0].Str)
 	}
-	return resp.Error("ERR wrong number of arguments for 'ping' command")
+	return respError("ERR wrong number of arguments for 'ping' command")
 }
 
 func (s *Server) handleEcho(args []resp.Value) resp.Value {
 	if len(args) != 1 {
-		return resp.Error("ERR wrong number of arguments for 'echo' command")
+		return respError("ERR wrong number of arguments for 'echo' command")
 	}
-	return resp.BulkString(args[0].Str)
+	return respBulkString(args[0].Str)
 }
 
 func (s *Server) handleGet(args []resp.Value) resp.Value {
 	if len(args) != 1 {
-		return resp.Error("ERR wrong number of arguments for 'get' command")
+		return respError("ERR wrong number of arguments for 'get' command")
 	}
 
 	key := args[0].Str
 	value, exists := s.store.Get(key)
 	if !exists {
-		return resp.NullBulkString()
+		return respNullBulkString()
 	}
-	return resp.BulkString(value)
+	return respBulkString(value)
 }
 
 func (s *Server) handleSet(args []resp.Value) resp.Value {
 	if len(args) < 2 {
-		return resp.Error("ERR wrong number of arguments for 'set' command")
+		return respError("ERR wrong number of arguments for 'set' command")
 	}
 
 	key := args[0].Str
@@ -198,27 +219,27 @@ func (s *Server) handleSet(args []resp.Value) resp.Value {
 			switch opt {
 			case "EX":
 				if i+1 >= len(args) {
-					return resp.Error("ERR syntax error")
+					return respError("ERR syntax error")
 				}
 				seconds, err := strconv.Atoi(args[i+1].Str)
 				if err != nil || seconds <= 0 {
-					return resp.Error("ERR invalid expire time in 'set' command")
+					return respError("ERR invalid expire time in 'set' command")
 				}
 				s.store.SetWithTTL(key, value, time.Duration(seconds)*time.Second)
-				return resp.SimpleString("OK")
+				return respSimpleString("OK")
 			default:
-				return resp.Error("ERR syntax error")
+				return respError("ERR syntax error")
 			}
 		}
 	}
 
 	s.store.Set(key, value)
-	return resp.SimpleString("OK")
+	return respSimpleString("OK")
 }
 
 func (s *Server) handleDel(args []resp.Value) resp.Value {
 	if len(args) == 0 {
-		return resp.Error("ERR wrong number of arguments for 'del' command")
+		return respError("ERR wrong number of arguments for 'del' command")
 	}
 
 	deleted := 0
@@ -227,38 +248,48 @@ func (s *Server) handleDel(args []resp.Value) resp.Value {
 			deleted++
 		}
 	}
-	return resp.Integer(deleted)
+	return respInteger(deleted)
 }
 
 func (s *Server) handleExpire(args []resp.Value) resp.Value {
 	if len(args) != 2 {
-		return resp.Error("ERR wrong number of arguments for 'expire' command")
+		return respError("ERR wrong number of arguments for 'expire' command")
 	}
 
 	key := args[0].Str
 	seconds, err := strconv.Atoi(args[1].Str)
 	if err != nil {
-		return resp.Error("ERR value is not an integer or out of range")
+		return respError("ERR value is not an integer or out of range")
 	}
 
-	if s.store.Expire(key, time.Duration(seconds)*time.Second) {
-		return resp.Integer(1)
+	// Get current value, then set with TTL
+	value, exists := s.store.Get(key)
+	if !exists {
+		return respInteger(0)
 	}
-	return resp.Integer(0)
+
+	s.store.SetWithTTL(key, value, time.Duration(seconds)*time.Second)
+	return respInteger(1)
 }
 
 func (s *Server) handleTTL(args []resp.Value) resp.Value {
 	if len(args) != 1 {
-		return resp.Error("ERR wrong number of arguments for 'ttl' command")
+		return respError("ERR wrong number of arguments for 'ttl' command")
 	}
 
 	key := args[0].Str
-	ttl, exists := s.store.TTL(key)
+
+	// First check if key exists
+	_, exists := s.store.Get(key)
 	if !exists {
-		return resp.Integer(-2) // key does not exist
+		return respInteger(-2) // key does not exist
 	}
-	if ttl < 0 {
-		return resp.Integer(-1) // key exists but has no TTL
+
+	// Check TTL
+	ttl, hasTTL := s.store.TTL(key)
+	if !hasTTL {
+		return respInteger(-1) // key exists but has no TTL
 	}
-	return resp.Integer(int(ttl.Seconds()))
+
+	return respInteger(int(ttl.Seconds()))
 }

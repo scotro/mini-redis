@@ -21,6 +21,11 @@ func startTestServer(t *testing.T) (*Server, string) {
 		t.Fatalf("Failed to start server: %v", err)
 	}
 
+	t.Cleanup(func() {
+		srv.Stop()
+		st.Close()
+	})
+
 	return srv, srv.Addr().String()
 }
 
@@ -30,9 +35,9 @@ func sendCommand(t *testing.T, conn net.Conn, args ...string) resp.Value {
 	// Build array of bulk strings
 	cmdArray := make([]resp.Value, len(args))
 	for i, arg := range args {
-		cmdArray[i] = resp.BulkString(arg)
+		cmdArray[i] = resp.Value{Type: resp.TypeBulkString, Str: arg}
 	}
-	cmd := resp.Array(cmdArray...)
+	cmd := resp.Value{Type: resp.TypeArray, Array: cmdArray}
 
 	_, err := conn.Write(cmd.Serialize())
 	if err != nil {
@@ -49,8 +54,7 @@ func sendCommand(t *testing.T, conn net.Conn, args ...string) resp.Value {
 }
 
 func TestPing(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -72,8 +76,7 @@ func TestPing(t *testing.T) {
 }
 
 func TestEcho(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -88,8 +91,7 @@ func TestEcho(t *testing.T) {
 }
 
 func TestGetSet(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -99,7 +101,7 @@ func TestGetSet(t *testing.T) {
 
 	// Test GET on non-existent key
 	response := sendCommand(t, conn, "GET", "mykey")
-	if !response.IsNull() {
+	if !response.Null {
 		t.Errorf("Expected null bulk string, got %v", response)
 	}
 
@@ -117,8 +119,7 @@ func TestGetSet(t *testing.T) {
 }
 
 func TestSetWithEX(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -146,8 +147,7 @@ func TestSetWithEX(t *testing.T) {
 }
 
 func TestDel(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -168,7 +168,7 @@ func TestDel(t *testing.T) {
 
 	// Verify key1 is gone
 	response = sendCommand(t, conn, "GET", "key1")
-	if !response.IsNull() {
+	if !response.Null {
 		t.Errorf("Expected null bulk string, got %v", response)
 	}
 
@@ -180,8 +180,7 @@ func TestDel(t *testing.T) {
 }
 
 func TestExpire(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -212,8 +211,7 @@ func TestExpire(t *testing.T) {
 }
 
 func TestTTL(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -238,8 +236,7 @@ func TestTTL(t *testing.T) {
 }
 
 func TestUnknownCommand(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -254,8 +251,7 @@ func TestUnknownCommand(t *testing.T) {
 }
 
 func TestConcurrentConnections(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	numClients := 10
 	done := make(chan bool, numClients)
@@ -307,8 +303,7 @@ func TestConcurrentConnections(t *testing.T) {
 }
 
 func TestSetWrongArgs(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -324,8 +319,7 @@ func TestSetWrongArgs(t *testing.T) {
 }
 
 func TestCaseInsensitiveCommands(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Stop()
+	_, addr := startTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
