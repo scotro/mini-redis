@@ -1,6 +1,4 @@
-// Package store provides key-value storage with TTL support.
-// This is a mock implementation for server development.
-// Will be replaced by the real implementation from the store agent.
+// Package store provides a thread-safe in-memory key-value store with TTL support.
 package store
 
 import (
@@ -8,38 +6,78 @@ import (
 	"time"
 )
 
-// Store defines the interface for key-value storage.
+// Store defines the interface for the key-value store.
 type Store interface {
 	Get(key string) (string, bool)
 	Set(key string, value string)
 	SetWithTTL(key string, value string, ttl time.Duration)
 	Delete(key string) bool
+	Keys() []string
 	TTL(key string) (time.Duration, bool)
-	Expire(key string, ttl time.Duration) bool
+	Close()
 }
 
-// entry represents a stored value with optional expiration.
+// entry holds a value and its optional expiration time.
 type entry struct {
 	value     string
-	expiresAt time.Time
-	hasTTL    bool
+	expiresAt time.Time // zero value means no expiration
 }
 
-// MemoryStore is an in-memory implementation of Store.
-type MemoryStore struct {
-	mu   sync.RWMutex
-	data map[string]entry
+// isExpired returns true if the entry has expired.
+func (e *entry) isExpired() bool {
+	if e.expiresAt.IsZero() {
+		return false
+	}
+	return time.Now().After(e.expiresAt)
 }
 
-// New creates a new MemoryStore.
-func New() *MemoryStore {
-	return &MemoryStore{
-		data: make(map[string]entry),
+// memoryStore is a thread-safe in-memory implementation of Store.
+type memoryStore struct {
+	mu      sync.RWMutex
+	data    map[string]*entry
+	done    chan struct{}
+	stopped bool
+}
+
+// New creates a new Store with background cleanup.
+func New() Store {
+	s := &memoryStore{
+		data: make(map[string]*entry),
+		done: make(chan struct{}),
+	}
+	go s.cleanupLoop()
+	return s
+}
+
+// cleanupLoop periodically removes expired keys.
+func (s *memoryStore) cleanupLoop() {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-ticker.C:
+			s.removeExpired()
+		}
+	}
+}
+
+// removeExpired deletes all expired entries.
+func (s *memoryStore) removeExpired() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, e := range s.data {
+		if e.isExpired() {
+			delete(s.data, key)
+		}
 	}
 }
 
 // Get retrieves a value by key. Returns false if key doesn't exist or is expired.
-func (s *MemoryStore) Get(key string) (string, bool) {
+func (s *memoryStore) Get(key string) (string, bool) {
 	s.mu.RLock()
 	e, exists := s.data[key]
 	s.mu.RUnlock()
@@ -48,7 +86,8 @@ func (s *MemoryStore) Get(key string) (string, bool) {
 		return "", false
 	}
 
-	if e.hasTTL && time.Now().After(e.expiresAt) {
+	if e.isExpired() {
+		// Lazily delete expired key
 		s.Delete(key)
 		return "", false
 	}
@@ -56,38 +95,57 @@ func (s *MemoryStore) Get(key string) (string, bool) {
 	return e.value, true
 }
 
-// Set stores a value with no expiration.
-func (s *MemoryStore) Set(key string, value string) {
+// Set stores a key-value pair with no expiration.
+func (s *memoryStore) Set(key string, value string) {
 	s.mu.Lock()
-	s.data[key] = entry{value: value, hasTTL: false}
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+
+	s.data[key] = &entry{
+		value: value,
+	}
 }
 
-// SetWithTTL stores a value with a time-to-live duration.
-func (s *MemoryStore) SetWithTTL(key string, value string, ttl time.Duration) {
+// SetWithTTL stores a key-value pair that expires after the given duration.
+func (s *memoryStore) SetWithTTL(key string, value string, ttl time.Duration) {
 	s.mu.Lock()
-	s.data[key] = entry{
+	defer s.mu.Unlock()
+
+	s.data[key] = &entry{
 		value:     value,
 		expiresAt: time.Now().Add(ttl),
-		hasTTL:    true,
 	}
-	s.mu.Unlock()
 }
 
-// Delete removes a key. Returns true if key existed.
-func (s *MemoryStore) Delete(key string) bool {
+// Delete removes a key from the store. Returns true if the key existed.
+func (s *memoryStore) Delete(key string) bool {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	_, exists := s.data[key]
-	delete(s.data, key)
-	s.mu.Unlock()
+	if exists {
+		delete(s.data, key)
+	}
 	return exists
 }
 
+// Keys returns all non-expired keys in the store.
+func (s *memoryStore) Keys() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	keys := make([]string, 0, len(s.data))
+	for key, e := range s.data {
+		if !e.isExpired() {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
 // TTL returns the remaining time-to-live for a key.
-// Returns (duration, true) if key exists and has TTL.
-// Returns (-1, true) if key exists but has no TTL.
-// Returns (0, false) if key doesn't exist.
-func (s *MemoryStore) TTL(key string) (time.Duration, bool) {
+// Returns (0, false) if the key doesn't exist or has no TTL.
+// Returns (duration, true) if the key has a TTL set.
+func (s *memoryStore) TTL(key string) (time.Duration, bool) {
 	s.mu.RLock()
 	e, exists := s.data[key]
 	s.mu.RUnlock()
@@ -96,36 +154,31 @@ func (s *MemoryStore) TTL(key string) (time.Duration, bool) {
 		return 0, false
 	}
 
-	if e.hasTTL {
-		if time.Now().After(e.expiresAt) {
-			s.Delete(key)
-			return 0, false
-		}
-		return time.Until(e.expiresAt), true
+	if e.expiresAt.IsZero() {
+		return 0, false
 	}
 
-	return -1, true // key exists but no TTL
+	if e.isExpired() {
+		return 0, false
+	}
+
+	remaining := time.Until(e.expiresAt)
+	if remaining < 0 {
+		return 0, false
+	}
+
+	return remaining, true
 }
 
-// Expire sets a TTL on an existing key. Returns true if key exists.
-func (s *MemoryStore) Expire(key string, ttl time.Duration) bool {
+// Close stops the background cleanup goroutine.
+func (s *memoryStore) Close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	e, exists := s.data[key]
-	if !exists {
-		return false
+	if s.stopped {
+		s.mu.Unlock()
+		return
 	}
+	s.stopped = true
+	s.mu.Unlock()
 
-	if e.hasTTL && time.Now().After(e.expiresAt) {
-		delete(s.data, key)
-		return false
-	}
-
-	s.data[key] = entry{
-		value:     e.value,
-		expiresAt: time.Now().Add(ttl),
-		hasTTL:    true,
-	}
-	return true
+	close(s.done)
 }

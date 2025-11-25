@@ -1,17 +1,15 @@
-// Package resp implements the Redis Serialization Protocol (RESP).
-// This is a mock implementation for server development.
-// Will be replaced by the real implementation from the resp agent.
+// Package resp implements the Redis Serialization Protocol (RESP) parser.
 package resp
 
 import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
-	"strings"
 )
 
-// RESP type bytes
+// RESP type markers
 const (
 	TypeSimpleString = '+'
 	TypeError        = '-'
@@ -20,24 +18,31 @@ const (
 	TypeArray        = '*'
 )
 
-// Value represents a RESP value.
-type Value struct {
-	Type  byte
-	Str   string
-	Num   int
-	Array []Value
-}
-
 // Common errors
 var (
-	ErrInvalidSyntax = errors.New("invalid RESP syntax")
-	ErrUnexpectedEOF = errors.New("unexpected EOF")
+	ErrInvalidType     = errors.New("invalid RESP type")
+	ErrInvalidFormat   = errors.New("invalid RESP format")
+	ErrInvalidLength   = errors.New("invalid length")
+	ErrUnexpectedEOF   = errors.New("unexpected end of input")
+	ErrInvalidInteger  = errors.New("invalid integer format")
 )
 
-// Parse reads a RESP value from the reader.
+// Value represents a RESP value
+type Value struct {
+	Type  byte     // '+', '-', ':', '$', '*'
+	Str   string   // For simple strings, errors, and bulk strings
+	Num   int      // For integers
+	Array []Value  // For arrays
+	Null  bool     // For null bulk strings and null arrays
+}
+
+// Parse reads and parses a RESP value from the reader.
 func Parse(reader *bufio.Reader) (Value, error) {
 	typeByte, err := reader.ReadByte()
 	if err != nil {
+		if err == io.EOF {
+			return Value{}, ErrUnexpectedEOF
+		}
 		return Value{}, err
 	}
 
@@ -53,10 +58,11 @@ func Parse(reader *bufio.Reader) (Value, error) {
 	case TypeArray:
 		return parseArray(reader)
 	default:
-		return Value{}, fmt.Errorf("%w: unknown type byte '%c'", ErrInvalidSyntax, typeByte)
+		return Value{}, fmt.Errorf("%w: %c", ErrInvalidType, typeByte)
 	}
 }
 
+// parseSimpleString parses a simple string (+OK\r\n)
 func parseSimpleString(reader *bufio.Reader) (Value, error) {
 	line, err := readLine(reader)
 	if err != nil {
@@ -65,6 +71,7 @@ func parseSimpleString(reader *bufio.Reader) (Value, error) {
 	return Value{Type: TypeSimpleString, Str: line}, nil
 }
 
+// parseError parses an error (-ERR message\r\n)
 func parseError(reader *bufio.Reader) (Value, error) {
 	line, err := readLine(reader)
 	if err != nil {
@@ -73,76 +80,112 @@ func parseError(reader *bufio.Reader) (Value, error) {
 	return Value{Type: TypeError, Str: line}, nil
 }
 
+// parseInteger parses an integer (:1000\r\n)
 func parseInteger(reader *bufio.Reader) (Value, error) {
 	line, err := readLine(reader)
 	if err != nil {
 		return Value{}, err
 	}
+
 	num, err := strconv.Atoi(line)
 	if err != nil {
-		return Value{}, fmt.Errorf("%w: invalid integer '%s'", ErrInvalidSyntax, line)
+		return Value{}, ErrInvalidInteger
 	}
+
 	return Value{Type: TypeInteger, Num: num}, nil
 }
 
+// parseBulkString parses a bulk string ($5\r\nhello\r\n)
 func parseBulkString(reader *bufio.Reader) (Value, error) {
 	line, err := readLine(reader)
 	if err != nil {
 		return Value{}, err
 	}
+
 	length, err := strconv.Atoi(line)
 	if err != nil {
-		return Value{}, fmt.Errorf("%w: invalid bulk string length '%s'", ErrInvalidSyntax, line)
+		return Value{}, ErrInvalidLength
 	}
 
+	// Handle null bulk string ($-1\r\n)
 	if length == -1 {
-		return Value{Type: TypeBulkString, Str: "", Num: -1}, nil // null bulk string
+		return Value{Type: TypeBulkString, Null: true}, nil
 	}
 
-	data := make([]byte, length+2) // +2 for CRLF
-	_, err = reader.Read(data)
+	if length < 0 {
+		return Value{}, ErrInvalidLength
+	}
+
+	// Read the string content plus \r\n
+	buf := make([]byte, length+2)
+	_, err = io.ReadFull(reader, buf)
 	if err != nil {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return Value{}, ErrUnexpectedEOF
+		}
 		return Value{}, err
 	}
 
-	return Value{Type: TypeBulkString, Str: string(data[:length])}, nil
+	// Verify trailing \r\n
+	if buf[length] != '\r' || buf[length+1] != '\n' {
+		return Value{}, ErrInvalidFormat
+	}
+
+	return Value{Type: TypeBulkString, Str: string(buf[:length])}, nil
 }
 
+// parseArray parses an array (*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n)
 func parseArray(reader *bufio.Reader) (Value, error) {
 	line, err := readLine(reader)
 	if err != nil {
 		return Value{}, err
 	}
+
 	count, err := strconv.Atoi(line)
 	if err != nil {
-		return Value{}, fmt.Errorf("%w: invalid array count '%s'", ErrInvalidSyntax, line)
+		return Value{}, ErrInvalidLength
 	}
 
+	// Handle null array (*-1\r\n)
 	if count == -1 {
-		return Value{Type: TypeArray, Array: nil}, nil // null array
+		return Value{Type: TypeArray, Null: true}, nil
 	}
 
-	arr := make([]Value, count)
+	if count < 0 {
+		return Value{}, ErrInvalidLength
+	}
+
+	array := make([]Value, count)
 	for i := 0; i < count; i++ {
 		val, err := Parse(reader)
 		if err != nil {
 			return Value{}, err
 		}
-		arr[i] = val
+		array[i] = val
 	}
 
-	return Value{Type: TypeArray, Array: arr}, nil
+	return Value{Type: TypeArray, Array: array}, nil
 }
 
+// readLine reads until \r\n and returns the line without the delimiter.
 func readLine(reader *bufio.Reader) (string, error) {
 	line, err := reader.ReadString('\n')
 	if err != nil {
+		if err == io.EOF {
+			return "", ErrUnexpectedEOF
+		}
 		return "", err
 	}
-	return strings.TrimSuffix(line, "\r\n"), nil
+
+	// Line must end with \r\n
+	if len(line) < 2 || line[len(line)-2] != '\r' {
+		return "", ErrInvalidFormat
+	}
+
+	return line[:len(line)-2], nil
 }
 
-// Serialize converts a Value to its RESP wire format.
+// Serialize converts the Value back to RESP format.
 func (v Value) Serialize() []byte {
 	switch v.Type {
 	case TypeSimpleString:
@@ -152,13 +195,13 @@ func (v Value) Serialize() []byte {
 	case TypeInteger:
 		return []byte(fmt.Sprintf(":%d\r\n", v.Num))
 	case TypeBulkString:
-		if v.Str == "" && v.Num == -1 {
-			return []byte("$-1\r\n") // null bulk string
+		if v.Null {
+			return []byte("$-1\r\n")
 		}
 		return []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(v.Str), v.Str))
 	case TypeArray:
-		if v.Array == nil {
-			return []byte("*-1\r\n") // null array
+		if v.Null {
+			return []byte("*-1\r\n")
 		}
 		result := []byte(fmt.Sprintf("*%d\r\n", len(v.Array)))
 		for _, elem := range v.Array {
@@ -166,42 +209,6 @@ func (v Value) Serialize() []byte {
 		}
 		return result
 	default:
-		return []byte("-ERR unknown type\r\n")
+		return nil
 	}
-}
-
-// Helper constructors for common responses
-func SimpleString(s string) Value {
-	return Value{Type: TypeSimpleString, Str: s}
-}
-
-func Error(s string) Value {
-	return Value{Type: TypeError, Str: s}
-}
-
-func Integer(n int) Value {
-	return Value{Type: TypeInteger, Num: n}
-}
-
-func BulkString(s string) Value {
-	return Value{Type: TypeBulkString, Str: s}
-}
-
-func NullBulkString() Value {
-	return Value{Type: TypeBulkString, Str: "", Num: -1}
-}
-
-func Array(values ...Value) Value {
-	return Value{Type: TypeArray, Array: values}
-}
-
-// IsNull returns true if this is a null bulk string or null array.
-func (v Value) IsNull() bool {
-	if v.Type == TypeBulkString && v.Str == "" && v.Num == -1 {
-		return true
-	}
-	if v.Type == TypeArray && v.Array == nil {
-		return true
-	}
-	return false
 }
