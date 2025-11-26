@@ -75,7 +75,9 @@ func (s *Server) Start() error {
 func (s *Server) Stop() {
 	close(s.quit)
 	if s.listener != nil {
-		s.listener.Close()
+		if err := s.listener.Close(); err != nil {
+			log.Printf("Error closing listener: %v", err)
+		}
 	}
 	s.wg.Wait()
 }
@@ -108,7 +110,11 @@ func (s *Server) acceptConnections() {
 
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("Error closing connection: %v", err)
+		}
+	}()
 
 	reader := bufio.NewReader(conn)
 
@@ -128,7 +134,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 		}
 
 		response := s.executeCommand(value)
-		conn.Write(response.Serialize())
+		if _, err := conn.Write(response.Serialize()); err != nil {
+			log.Printf("Error writing response: %v", err)
+			return
+		}
 	}
 }
 
@@ -265,22 +274,20 @@ func (s *Server) handleSet(args []resp.Value) resp.Value {
 
 	// Parse options (EX seconds)
 	if len(args) > 2 {
-		for i := 2; i < len(args); i++ {
-			opt := strings.ToUpper(args[i].Str)
-			switch opt {
-			case "EX":
-				if i+1 >= len(args) {
-					return respError("ERR syntax error")
-				}
-				seconds, err := strconv.Atoi(args[i+1].Str)
-				if err != nil || seconds <= 0 {
-					return respError("ERR invalid expire time in 'set' command")
-				}
-				s.store.SetWithTTL(key, value, time.Duration(seconds)*time.Second)
-				return respSimpleString("OK")
-			default:
+		opt := strings.ToUpper(args[2].Str)
+		switch opt {
+		case "EX":
+			if len(args) < 4 {
 				return respError("ERR syntax error")
 			}
+			seconds, err := strconv.Atoi(args[3].Str)
+			if err != nil || seconds <= 0 {
+				return respError("ERR invalid expire time in 'set' command")
+			}
+			s.store.SetWithTTL(key, value, time.Duration(seconds)*time.Second)
+			return respSimpleString("OK")
+		default:
+			return respError("ERR syntax error")
 		}
 	}
 

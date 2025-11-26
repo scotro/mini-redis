@@ -63,7 +63,7 @@ func TestPing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Test PING without argument
 	response := sendCommand(t, conn, "PING")
@@ -85,7 +85,7 @@ func TestEcho(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	response := sendCommand(t, conn, "ECHO", "hello world")
 	if response.Type != resp.TypeBulkString || response.Str != "hello world" {
@@ -100,7 +100,7 @@ func TestGetSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Test GET on non-existent key
 	response := sendCommand(t, conn, "GET", "mykey")
@@ -128,7 +128,7 @@ func TestSetWithEX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Set key with 2 second expiry
 	response := sendCommand(t, conn, "SET", "expkey", "expvalue", "EX", "2")
@@ -156,7 +156,7 @@ func TestDel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Set some keys
 	sendCommand(t, conn, "SET", "key1", "val1")
@@ -189,7 +189,7 @@ func TestExpire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Set a key
 	sendCommand(t, conn, "SET", "mykey", "myvalue")
@@ -220,7 +220,7 @@ func TestTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// TTL on non-existent key
 	response := sendCommand(t, conn, "TTL", "nonexistent")
@@ -245,7 +245,7 @@ func TestUnknownCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	response := sendCommand(t, conn, "UNKNOWN")
 	if response.Type != resp.TypeError {
@@ -267,7 +267,7 @@ func TestConcurrentConnections(t *testing.T) {
 				done <- false
 				return
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			key := fmt.Sprintf("key%d", clientID)
 			value := fmt.Sprintf("value%d", clientID)
@@ -312,7 +312,7 @@ func TestSetWrongArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// SET with only key
 	response := sendCommand(t, conn, "SET", "key")
@@ -328,7 +328,7 @@ func TestCaseInsensitiveCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Test lowercase
 	response := sendCommand(t, conn, "ping")
