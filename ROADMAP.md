@@ -12,6 +12,11 @@
   - GET, SET (with EX option), DEL
   - EXPIRE, TTL
 
+- **Tier 1: Data Types**
+  - Lists
+  - Hashes
+  - Sets
+
 ---
 
 ## Tier 1: Data Types (Highly Parallel - 3 agents)
