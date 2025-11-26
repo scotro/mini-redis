@@ -58,3 +58,6 @@ ehthumbs.db
 
 # Git Worktrees for AI Concurrency Workflow
 worktrees/
+
+# AIR workflow
+.air/worktrees/
