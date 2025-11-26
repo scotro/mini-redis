@@ -61,3 +61,6 @@ worktrees/
 
 # AIR workflow
 .air/worktrees/
+.air/launch.sh
+.air/.context
+.air/.assignment
