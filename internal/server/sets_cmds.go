@@ -44,7 +44,7 @@ func (s *Server) handleSAdd(args []resp.Value) resp.Value {
 		members[i] = arg.Str
 	}
 
-	added := setStore.SAdd(key, members...)
+	added := s.setStore.SAdd(key, members...)
 	return respInteger(added)
 }
 
@@ -68,7 +68,7 @@ func (s *Server) handleSRem(args []resp.Value) resp.Value {
 		members[i] = arg.Str
 	}
 
-	removed := setStore.SRem(key, members...)
+	removed := s.setStore.SRem(key, members...)
 	return respInteger(removed)
 }
 
@@ -87,7 +87,7 @@ func (s *Server) handleSMembers(args []resp.Value) resp.Value {
 		return respError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 
-	members := setStore.SMembers(key)
+	members := s.setStore.SMembers(key)
 	array := make([]resp.Value, len(members))
 	for i, m := range members {
 		array[i] = respBulkString(m)
@@ -112,7 +112,7 @@ func (s *Server) handleSIsMember(args []resp.Value) resp.Value {
 		return respError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 
-	if setStore.SIsMember(key, member) {
+	if s.setStore.SIsMember(key, member) {
 		return respInteger(1)
 	}
 	return respInteger(0)
@@ -133,7 +133,7 @@ func (s *Server) handleSCard(args []resp.Value) resp.Value {
 		return respError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 
-	return respInteger(setStore.SCard(key))
+	return respInteger(s.setStore.SCard(key))
 }
 
 // handleSInter handles the SINTER command.
@@ -154,7 +154,7 @@ func (s *Server) handleSInter(args []resp.Value) resp.Value {
 		keys[i] = key
 	}
 
-	members := setStore.SInter(keys...)
+	members := s.setStore.SInter(keys...)
 	array := make([]resp.Value, len(members))
 	for i, m := range members {
 		array[i] = respBulkString(m)

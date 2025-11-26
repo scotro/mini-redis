@@ -95,7 +95,7 @@ func TestHandleSRem(t *testing.T) {
 	srv := createTestServer(t)
 
 	// Setup
-	setStore.SAdd("myset", "a", "b", "c", "d")
+	srv.setStore.SAdd("myset", "a", "b", "c", "d")
 
 	tests := []struct {
 		name     string
@@ -158,7 +158,7 @@ func TestHandleSMembers(t *testing.T) {
 	}
 
 	// Set with members
-	setStore.SAdd("myset", "c", "a", "b")
+	srv.setStore.SAdd("myset", "c", "a", "b")
 	result = srv.handleSMembers(makeSetArgs("myset"))
 
 	if result.Type != resp.TypeArray {
@@ -214,7 +214,7 @@ func TestHandleSIsMember(t *testing.T) {
 	ResetSetStore()
 	srv := createTestServer(t)
 
-	setStore.SAdd("myset", "a", "b", "c")
+	srv.setStore.SAdd("myset", "a", "b", "c")
 
 	tests := []struct {
 		name    string
@@ -273,7 +273,7 @@ func TestHandleSCard(t *testing.T) {
 	}
 
 	// Set with members
-	setStore.SAdd("myset", "a", "b", "c")
+	srv.setStore.SAdd("myset", "a", "b", "c")
 	result = srv.handleSCard(makeSetArgs("myset"))
 	if result.Type != resp.TypeInteger || result.Num != 3 {
 		t.Errorf("SCard(myset) = %d, want 3", result.Num)
@@ -311,9 +311,9 @@ func TestHandleSInter(t *testing.T) {
 	ResetSetStore()
 	srv := createTestServer(t)
 
-	setStore.SAdd("set1", "a", "b", "c", "d")
-	setStore.SAdd("set2", "b", "c", "d", "e")
-	setStore.SAdd("set3", "c", "d", "e", "f")
+	srv.setStore.SAdd("set1", "a", "b", "c", "d")
+	srv.setStore.SAdd("set2", "b", "c", "d", "e")
+	srv.setStore.SAdd("set3", "c", "d", "e", "f")
 
 	tests := []struct {
 		name     string
@@ -370,7 +370,7 @@ func TestHandleSInterWrongType(t *testing.T) {
 	ResetSetStore()
 	srv := createTestServer(t)
 
-	setStore.SAdd("set1", "a", "b")
+	srv.setStore.SAdd("set1", "a", "b")
 	srv.store.Set("stringkey", "value")
 
 	result := srv.handleSInter(makeSetArgs("set1", "stringkey"))
