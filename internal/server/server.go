@@ -29,20 +29,32 @@ func DefaultConfig() Config {
 
 // Server represents a Redis-compatible TCP server.
 type Server struct {
-	config   Config
-	store    store.Store
-	listener net.Listener
-	wg       sync.WaitGroup
-	quit     chan struct{}
+	config      Config
+	store       store.Store
+	listStore   store.ListStore
+	hashStore   store.HashStore
+	setStore    store.SetStore
+	listHandler *ListCommandHandler
+	hashHandler *HashCommands
+	listener    net.Listener
+	wg          sync.WaitGroup
+	quit        chan struct{}
 }
 
-// New creates a new server with the given store and configuration.
-func New(s store.Store, cfg Config) *Server {
-	return &Server{
-		config: cfg,
-		store:  s,
-		quit:   make(chan struct{}),
+// New creates a new server with the given stores and configuration.
+func New(s store.Store, listStore store.ListStore, hashStore store.HashStore, setStore store.SetStore, cfg Config) *Server {
+	srv := &Server{
+		config:    cfg,
+		store:     s,
+		listStore: listStore,
+		hashStore: hashStore,
+		setStore:  setStore,
+		quit:      make(chan struct{}),
 	}
+	// Initialize command handlers
+	srv.listHandler = NewListCommandHandler(listStore, s)
+	srv.hashHandler = NewHashCommands(hashStore, s)
+	return srv
 }
 
 // Start begins listening for connections.
@@ -148,6 +160,45 @@ func (s *Server) executeCommand(value resp.Value) resp.Value {
 		return s.handleExpire(args)
 	case "TTL":
 		return s.handleTTL(args)
+	// List commands
+	case "LPUSH":
+		return s.listHandler.HandleLPush(args)
+	case "RPUSH":
+		return s.listHandler.HandleRPush(args)
+	case "LPOP":
+		return s.listHandler.HandleLPop(args)
+	case "RPOP":
+		return s.listHandler.HandleRPop(args)
+	case "LRANGE":
+		return s.listHandler.HandleLRange(args)
+	case "LLEN":
+		return s.listHandler.HandleLLen(args)
+	// Hash commands
+	case "HSET":
+		return s.hashHandler.HandleHSet(args)
+	case "HGET":
+		return s.hashHandler.HandleHGet(args)
+	case "HDEL":
+		return s.hashHandler.HandleHDel(args)
+	case "HGETALL":
+		return s.hashHandler.HandleHGetAll(args)
+	case "HKEYS":
+		return s.hashHandler.HandleHKeys(args)
+	case "HLEN":
+		return s.hashHandler.HandleHLen(args)
+	// Set commands
+	case "SADD":
+		return s.handleSAdd(args)
+	case "SREM":
+		return s.handleSRem(args)
+	case "SMEMBERS":
+		return s.handleSMembers(args)
+	case "SISMEMBER":
+		return s.handleSIsMember(args)
+	case "SCARD":
+		return s.handleSCard(args)
+	case "SINTER":
+		return s.handleSInter(args)
 	default:
 		return respError(fmt.Sprintf("ERR unknown command '%s'", cmd))
 	}

@@ -12,16 +12,19 @@ import (
 func createTestServer(t *testing.T) *Server {
 	t.Helper()
 	st := store.New()
+	listStore := store.NewListStore()
+	hashStore := store.NewHashStore()
+	setStore := store.NewSetStore()
 	cfg := Config{Port: 0}
-	srv := New(st, cfg)
+	srv := New(st, listStore, hashStore, setStore, cfg)
 	t.Cleanup(func() {
 		st.Close()
 	})
 	return srv
 }
 
-// makeArgs creates a slice of resp.Value from strings.
-func makeArgs(args ...string) []resp.Value {
+// makeSetArgs creates a slice of resp.Value from strings for set command tests.
+func makeSetArgs(args ...string) []resp.Value {
 	result := make([]resp.Value, len(args))
 	for i, arg := range args {
 		result[i] = resp.Value{Type: resp.TypeBulkString, Str: arg}
@@ -50,7 +53,7 @@ func TestHandleSAdd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := srv.handleSAdd(makeArgs(tt.args...))
+			result := srv.handleSAdd(makeSetArgs(tt.args...))
 
 			if tt.wantErr {
 				if result.Type != resp.TypeError {
@@ -77,7 +80,7 @@ func TestHandleSAddWrongType(t *testing.T) {
 	srv.store.Set("stringkey", "value")
 
 	// Try to SADD to the string key
-	result := srv.handleSAdd(makeArgs("stringkey", "member"))
+	result := srv.handleSAdd(makeSetArgs("stringkey", "member"))
 
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error type, got %c", result.Type)
@@ -109,7 +112,7 @@ func TestHandleSRem(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := srv.handleSRem(makeArgs(tt.args...))
+			result := srv.handleSRem(makeSetArgs(tt.args...))
 
 			if tt.wantErr {
 				if result.Type != resp.TypeError {
@@ -134,7 +137,7 @@ func TestHandleSRemWrongType(t *testing.T) {
 
 	srv.store.Set("stringkey", "value")
 
-	result := srv.handleSRem(makeArgs("stringkey", "member"))
+	result := srv.handleSRem(makeSetArgs("stringkey", "member"))
 
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error type, got %c", result.Type)
@@ -146,7 +149,7 @@ func TestHandleSMembers(t *testing.T) {
 	srv := createTestServer(t)
 
 	// Empty set
-	result := srv.handleSMembers(makeArgs("nonexistent"))
+	result := srv.handleSMembers(makeSetArgs("nonexistent"))
 	if result.Type != resp.TypeArray {
 		t.Errorf("Type = %c, want array", result.Type)
 	}
@@ -156,7 +159,7 @@ func TestHandleSMembers(t *testing.T) {
 
 	// Set with members
 	setStore.SAdd("myset", "c", "a", "b")
-	result = srv.handleSMembers(makeArgs("myset"))
+	result = srv.handleSMembers(makeSetArgs("myset"))
 
 	if result.Type != resp.TypeArray {
 		t.Errorf("Type = %c, want array", result.Type)
@@ -184,12 +187,12 @@ func TestHandleSMembersWrongArgs(t *testing.T) {
 	ResetSetStore()
 	srv := createTestServer(t)
 
-	result := srv.handleSMembers(makeArgs())
+	result := srv.handleSMembers(makeSetArgs())
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error, got type %c", result.Type)
 	}
 
-	result = srv.handleSMembers(makeArgs("key1", "key2"))
+	result = srv.handleSMembers(makeSetArgs("key1", "key2"))
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error, got type %c", result.Type)
 	}
@@ -201,7 +204,7 @@ func TestHandleSMembersWrongType(t *testing.T) {
 
 	srv.store.Set("stringkey", "value")
 
-	result := srv.handleSMembers(makeArgs("stringkey"))
+	result := srv.handleSMembers(makeSetArgs("stringkey"))
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error type, got %c", result.Type)
 	}
@@ -228,7 +231,7 @@ func TestHandleSIsMember(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := srv.handleSIsMember(makeArgs(tt.args...))
+			result := srv.handleSIsMember(makeSetArgs(tt.args...))
 
 			if tt.wantErr {
 				if result.Type != resp.TypeError {
@@ -253,7 +256,7 @@ func TestHandleSIsMemberWrongType(t *testing.T) {
 
 	srv.store.Set("stringkey", "value")
 
-	result := srv.handleSIsMember(makeArgs("stringkey", "member"))
+	result := srv.handleSIsMember(makeSetArgs("stringkey", "member"))
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error type, got %c", result.Type)
 	}
@@ -264,14 +267,14 @@ func TestHandleSCard(t *testing.T) {
 	srv := createTestServer(t)
 
 	// Non-existent key
-	result := srv.handleSCard(makeArgs("nonexistent"))
+	result := srv.handleSCard(makeSetArgs("nonexistent"))
 	if result.Type != resp.TypeInteger || result.Num != 0 {
 		t.Errorf("SCard(nonexistent) = %d, want 0", result.Num)
 	}
 
 	// Set with members
 	setStore.SAdd("myset", "a", "b", "c")
-	result = srv.handleSCard(makeArgs("myset"))
+	result = srv.handleSCard(makeSetArgs("myset"))
 	if result.Type != resp.TypeInteger || result.Num != 3 {
 		t.Errorf("SCard(myset) = %d, want 3", result.Num)
 	}
@@ -281,12 +284,12 @@ func TestHandleSCardWrongArgs(t *testing.T) {
 	ResetSetStore()
 	srv := createTestServer(t)
 
-	result := srv.handleSCard(makeArgs())
+	result := srv.handleSCard(makeSetArgs())
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error, got type %c", result.Type)
 	}
 
-	result = srv.handleSCard(makeArgs("key1", "key2"))
+	result = srv.handleSCard(makeSetArgs("key1", "key2"))
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error, got type %c", result.Type)
 	}
@@ -298,7 +301,7 @@ func TestHandleSCardWrongType(t *testing.T) {
 
 	srv.store.Set("stringkey", "value")
 
-	result := srv.handleSCard(makeArgs("stringkey"))
+	result := srv.handleSCard(makeSetArgs("stringkey"))
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error type, got %c", result.Type)
 	}
@@ -325,7 +328,7 @@ func TestHandleSInter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := srv.handleSInter(makeArgs(tt.keys...))
+			result := srv.handleSInter(makeSetArgs(tt.keys...))
 
 			if result.Type != resp.TypeArray {
 				t.Errorf("Type = %c, want array", result.Type)
@@ -357,7 +360,7 @@ func TestHandleSInterWrongArgs(t *testing.T) {
 	ResetSetStore()
 	srv := createTestServer(t)
 
-	result := srv.handleSInter(makeArgs())
+	result := srv.handleSInter(makeSetArgs())
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error, got type %c", result.Type)
 	}
@@ -370,7 +373,7 @@ func TestHandleSInterWrongType(t *testing.T) {
 	setStore.SAdd("set1", "a", "b")
 	srv.store.Set("stringkey", "value")
 
-	result := srv.handleSInter(makeArgs("set1", "stringkey"))
+	result := srv.handleSInter(makeSetArgs("set1", "stringkey"))
 	if result.Type != resp.TypeError {
 		t.Errorf("Expected error type, got %c", result.Type)
 	}
@@ -381,19 +384,19 @@ func TestSetCommandsWithEmptyString(t *testing.T) {
 	srv := createTestServer(t)
 
 	// Add empty string as member
-	result := srv.handleSAdd(makeArgs("myset", ""))
+	result := srv.handleSAdd(makeSetArgs("myset", ""))
 	if result.Type != resp.TypeInteger || result.Num != 1 {
 		t.Errorf("SAdd with empty string failed")
 	}
 
 	// Check membership
-	result = srv.handleSIsMember(makeArgs("myset", ""))
+	result = srv.handleSIsMember(makeSetArgs("myset", ""))
 	if result.Type != resp.TypeInteger || result.Num != 1 {
 		t.Errorf("SIsMember with empty string = %d, want 1", result.Num)
 	}
 
 	// Get members
-	result = srv.handleSMembers(makeArgs("myset"))
+	result = srv.handleSMembers(makeSetArgs("myset"))
 	if len(result.Array) != 1 || result.Array[0].Str != "" {
 		t.Errorf("SMembers did not return empty string member")
 	}
@@ -404,16 +407,16 @@ func TestSetAutoDeleteOnEmpty(t *testing.T) {
 	srv := createTestServer(t)
 
 	// Add and remove all members
-	srv.handleSAdd(makeArgs("myset", "a", "b"))
-	srv.handleSRem(makeArgs("myset", "a", "b"))
+	srv.handleSAdd(makeSetArgs("myset", "a", "b"))
+	srv.handleSRem(makeSetArgs("myset", "a", "b"))
 
 	// Set should be auto-deleted
-	result := srv.handleSCard(makeArgs("myset"))
+	result := srv.handleSCard(makeSetArgs("myset"))
 	if result.Num != 0 {
 		t.Errorf("SCard after removing all members = %d, want 0", result.Num)
 	}
 
-	result = srv.handleSMembers(makeArgs("myset"))
+	result = srv.handleSMembers(makeSetArgs("myset"))
 	if len(result.Array) != 0 {
 		t.Errorf("SMembers after removing all members returned %d, want 0", len(result.Array))
 	}

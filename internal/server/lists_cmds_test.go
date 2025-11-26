@@ -11,7 +11,7 @@ func newTestListHandler() *ListCommandHandler {
 	return NewListCommandHandler(store.NewListStore(), store.New())
 }
 
-func makeArgs(strs ...string) []resp.Value {
+func makeListArgs(strs ...string) []resp.Value {
 	args := make([]resp.Value, len(strs))
 	for i, s := range strs {
 		args[i] = resp.Value{Type: resp.TypeBulkString, Str: s}
@@ -56,7 +56,7 @@ func TestHandleLPush(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newTestListHandler()
-			got := h.HandleLPush(makeArgs(tt.args...))
+			got := h.HandleLPush(makeListArgs(tt.args...))
 
 			if got.Type != tt.wantType {
 				t.Errorf("HandleLPush() type = %c, want %c", got.Type, tt.wantType)
@@ -72,9 +72,9 @@ func TestHandleLPushOrder(t *testing.T) {
 	h := newTestListHandler()
 
 	// LPUSH mylist a b c should result in [c, b, a]
-	h.HandleLPush(makeArgs("mylist", "a", "b", "c"))
+	h.HandleLPush(makeListArgs("mylist", "a", "b", "c"))
 
-	result := h.HandleLRange(makeArgs("mylist", "0", "-1"))
+	result := h.HandleLRange(makeListArgs("mylist", "0", "-1"))
 	if result.Type != resp.TypeArray {
 		t.Fatalf("Expected array, got %c", result.Type)
 	}
@@ -122,7 +122,7 @@ func TestHandleRPush(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newTestListHandler()
-			got := h.HandleRPush(makeArgs(tt.args...))
+			got := h.HandleRPush(makeListArgs(tt.args...))
 
 			if got.Type != tt.wantType {
 				t.Errorf("HandleRPush() type = %c, want %c", got.Type, tt.wantType)
@@ -154,7 +154,7 @@ func TestHandleLPop(t *testing.T) {
 		{
 			name: "pop from list with elements",
 			setup: func(h *ListCommandHandler) {
-				h.HandleRPush(makeArgs("mylist", "a", "b", "c"))
+				h.HandleRPush(makeListArgs("mylist", "a", "b", "c"))
 			},
 			args:     []string{"mylist"},
 			wantType: resp.TypeBulkString,
@@ -181,7 +181,7 @@ func TestHandleLPop(t *testing.T) {
 			h := newTestListHandler()
 			tt.setup(h)
 
-			got := h.HandleLPop(makeArgs(tt.args...))
+			got := h.HandleLPop(makeListArgs(tt.args...))
 
 			if got.Type != tt.wantType {
 				t.Errorf("HandleLPop() type = %c, want %c", got.Type, tt.wantType)
@@ -216,7 +216,7 @@ func TestHandleRPop(t *testing.T) {
 		{
 			name: "pop from list with elements",
 			setup: func(h *ListCommandHandler) {
-				h.HandleRPush(makeArgs("mylist", "a", "b", "c"))
+				h.HandleRPush(makeListArgs("mylist", "a", "b", "c"))
 			},
 			args:     []string{"mylist"},
 			wantType: resp.TypeBulkString,
@@ -236,7 +236,7 @@ func TestHandleRPop(t *testing.T) {
 			h := newTestListHandler()
 			tt.setup(h)
 
-			got := h.HandleRPop(makeArgs(tt.args...))
+			got := h.HandleRPop(makeListArgs(tt.args...))
 
 			if got.Type != tt.wantType {
 				t.Errorf("HandleRPop() type = %c, want %c", got.Type, tt.wantType)
@@ -270,7 +270,7 @@ func TestHandleLRange(t *testing.T) {
 		{
 			name: "full range",
 			setup: func(h *ListCommandHandler) {
-				h.HandleRPush(makeArgs("mylist", "a", "b", "c", "d", "e"))
+				h.HandleRPush(makeListArgs("mylist", "a", "b", "c", "d", "e"))
 			},
 			args:     []string{"mylist", "0", "-1"},
 			wantType: resp.TypeArray,
@@ -279,7 +279,7 @@ func TestHandleLRange(t *testing.T) {
 		{
 			name: "partial range",
 			setup: func(h *ListCommandHandler) {
-				h.HandleRPush(makeArgs("mylist", "a", "b", "c", "d", "e"))
+				h.HandleRPush(makeListArgs("mylist", "a", "b", "c", "d", "e"))
 			},
 			args:     []string{"mylist", "1", "3"},
 			wantType: resp.TypeArray,
@@ -288,7 +288,7 @@ func TestHandleLRange(t *testing.T) {
 		{
 			name: "negative indices",
 			setup: func(h *ListCommandHandler) {
-				h.HandleRPush(makeArgs("mylist", "a", "b", "c", "d", "e"))
+				h.HandleRPush(makeListArgs("mylist", "a", "b", "c", "d", "e"))
 			},
 			args:     []string{"mylist", "-3", "-1"},
 			wantType: resp.TypeArray,
@@ -322,7 +322,7 @@ func TestHandleLRange(t *testing.T) {
 			h := newTestListHandler()
 			tt.setup(h)
 
-			got := h.HandleLRange(makeArgs(tt.args...))
+			got := h.HandleLRange(makeListArgs(tt.args...))
 
 			if got.Type != tt.wantType {
 				t.Errorf("HandleLRange() type = %c, want %c", got.Type, tt.wantType)
@@ -366,7 +366,7 @@ func TestHandleLLen(t *testing.T) {
 		{
 			name: "len of list with elements",
 			setup: func(h *ListCommandHandler) {
-				h.HandleRPush(makeArgs("mylist", "a", "b", "c"))
+				h.HandleRPush(makeListArgs("mylist", "a", "b", "c"))
 			},
 			args:     []string{"mylist"},
 			wantType: resp.TypeInteger,
@@ -393,7 +393,7 @@ func TestHandleLLen(t *testing.T) {
 			h := newTestListHandler()
 			tt.setup(h)
 
-			got := h.HandleLLen(makeArgs(tt.args...))
+			got := h.HandleLLen(makeListArgs(tt.args...))
 
 			if got.Type != tt.wantType {
 				t.Errorf("HandleLLen() type = %c, want %c", got.Type, tt.wantType)
@@ -454,7 +454,7 @@ func TestWrongTypeError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.handler(makeArgs(tt.args...))
+			got := tt.handler(makeListArgs(tt.args...))
 
 			if got.Type != resp.TypeError {
 				t.Errorf("Expected error type, got %c", got.Type)
@@ -470,19 +470,19 @@ func TestStackBehavior(t *testing.T) {
 	h := newTestListHandler()
 
 	// Use LPUSH and LPOP as a stack (LIFO)
-	h.HandleLPush(makeArgs("stack", "1", "2", "3"))
+	h.HandleLPush(makeListArgs("stack", "1", "2", "3"))
 
 	// Should pop in order: 3, 2, 1
 	expected := []string{"3", "2", "1"}
 	for _, want := range expected {
-		got := h.HandleLPop(makeArgs("stack"))
+		got := h.HandleLPop(makeListArgs("stack"))
 		if got.Str != want {
 			t.Errorf("LPOP = %q, want %q", got.Str, want)
 		}
 	}
 
 	// Stack should be empty now
-	got := h.HandleLPop(makeArgs("stack"))
+	got := h.HandleLPop(makeListArgs("stack"))
 	if !got.Null {
 		t.Errorf("Expected null after emptying stack, got %q", got.Str)
 	}
@@ -492,19 +492,19 @@ func TestQueueBehavior(t *testing.T) {
 	h := newTestListHandler()
 
 	// Use RPUSH and LPOP as a queue (FIFO)
-	h.HandleRPush(makeArgs("queue", "1", "2", "3"))
+	h.HandleRPush(makeListArgs("queue", "1", "2", "3"))
 
 	// Should pop in order: 1, 2, 3
 	expected := []string{"1", "2", "3"}
 	for _, want := range expected {
-		got := h.HandleLPop(makeArgs("queue"))
+		got := h.HandleLPop(makeListArgs("queue"))
 		if got.Str != want {
 			t.Errorf("LPOP = %q, want %q", got.Str, want)
 		}
 	}
 
 	// Queue should be empty now
-	got := h.HandleLPop(makeArgs("queue"))
+	got := h.HandleLPop(makeListArgs("queue"))
 	if !got.Null {
 		t.Errorf("Expected null after emptying queue, got %q", got.Str)
 	}

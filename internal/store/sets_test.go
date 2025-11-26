@@ -238,7 +238,7 @@ func TestSInterEmptySets(t *testing.T) {
 	}
 }
 
-func TestKeyType(t *testing.T) {
+func TestSetStoreKeyType(t *testing.T) {
 	s := NewSetStore()
 
 	// Non-existent

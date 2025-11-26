@@ -15,10 +15,15 @@ func main() {
 	port := flag.Int("port", 6379, "Port to listen on")
 	flag.Parse()
 
-	// Create store and server
-	st := store.New()
+	// Create stores for all data types
+	stringStore := store.New()
+	listStore := store.NewListStore()
+	hashStore := store.NewHashStore()
+	setStore := store.NewSetStore()
+
+	// Create server with all stores
 	cfg := server.Config{Port: *port}
-	srv := server.New(st, cfg)
+	srv := server.New(stringStore, listStore, hashStore, setStore, cfg)
 
 	// Start server
 	if err := srv.Start(); err != nil {

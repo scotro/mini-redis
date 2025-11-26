@@ -387,7 +387,7 @@ func TestHLen(t *testing.T) {
 	}
 }
 
-func TestKeyType(t *testing.T) {
+func TestHashStoreKeyType(t *testing.T) {
 	tests := []struct {
 		name  string
 		setup func(s HashStore)

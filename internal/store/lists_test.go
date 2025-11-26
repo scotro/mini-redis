@@ -433,7 +433,7 @@ func TestLLen(t *testing.T) {
 	}
 }
 
-func TestKeyType(t *testing.T) {
+func TestListStoreKeyType(t *testing.T) {
 	tests := []struct {
 		name  string
 		setup func(s ListStore)
