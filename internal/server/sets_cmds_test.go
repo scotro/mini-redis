@@ -16,7 +16,7 @@ func createTestServer(t *testing.T) *Server {
 	hashStore := store.NewHashStore()
 	setStore := store.NewSetStore()
 	cfg := Config{Port: 0}
-	srv := New(st, listStore, hashStore, setStore, cfg)
+	srv := New(st, listStore, hashStore, setStore, nil, nil, cfg)
 	t.Cleanup(func() {
 		st.Close()
 	})

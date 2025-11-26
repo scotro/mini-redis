@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/scotro/mini-redis/internal/persistence"
+	"github.com/scotro/mini-redis/internal/pubsub"
 	"github.com/scotro/mini-redis/internal/server"
 	"github.com/scotro/mini-redis/internal/store"
 )
@@ -54,9 +55,12 @@ func main() {
 		}
 	}
 
-	// Create server with all stores
+	// Create PubSub instance
+	ps := pubsub.New()
+
+	// Create server with all stores and features
 	cfg := server.Config{Port: *port}
-	srv := server.New(stringStore, listStore, hashStore, setStore, cfg)
+	srv := server.New(stringStore, listStore, hashStore, setStore, persistMgr, ps, cfg)
 
 	// Start server
 	if err := srv.Start(); err != nil {

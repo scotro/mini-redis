@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/scotro/mini-redis/internal/persistence"
+	"github.com/scotro/mini-redis/internal/pubsub"
 	"github.com/scotro/mini-redis/internal/resp"
 	"github.com/scotro/mini-redis/internal/store"
 )
@@ -29,20 +31,23 @@ func DefaultConfig() Config {
 
 // Server represents a Redis-compatible TCP server.
 type Server struct {
-	config      Config
-	store       store.Store
-	listStore   store.ListStore
-	hashStore   store.HashStore
-	setStore    store.SetStore
-	listHandler *ListCommandHandler
-	hashHandler *HashCommands
-	listener    net.Listener
-	wg          sync.WaitGroup
-	quit        chan struct{}
+	config             Config
+	store              store.Store
+	listStore          store.ListStore
+	hashStore          store.HashStore
+	setStore           store.SetStore
+	listHandler        *ListCommandHandler
+	hashHandler        *HashCommands
+	persistenceHandler *PersistenceHandler
+	pubsubHandler      *PubSubHandler
+	listener           net.Listener
+	wg                 sync.WaitGroup
+	quit               chan struct{}
 }
 
 // New creates a new server with the given stores and configuration.
-func New(s store.Store, listStore store.ListStore, hashStore store.HashStore, setStore store.SetStore, cfg Config) *Server {
+// Pass nil for persistMgr or ps if those features are not needed.
+func New(s store.Store, listStore store.ListStore, hashStore store.HashStore, setStore store.SetStore, persistMgr *persistence.Manager, ps *pubsub.PubSub, cfg Config) *Server {
 	srv := &Server{
 		config:    cfg,
 		store:     s,
@@ -54,6 +59,17 @@ func New(s store.Store, listStore store.ListStore, hashStore store.HashStore, se
 	// Initialize command handlers
 	srv.listHandler = NewListCommandHandler(listStore, s)
 	srv.hashHandler = NewHashCommands(hashStore, s)
+
+	// Initialize persistence handler if manager provided
+	if persistMgr != nil {
+		srv.persistenceHandler = NewPersistenceHandler(persistMgr)
+	}
+
+	// Initialize pubsub handler if PubSub provided
+	if ps != nil {
+		srv.pubsubHandler = NewPubSubHandler(ps)
+	}
+
 	return srv
 }
 
@@ -208,6 +224,38 @@ func (s *Server) executeCommand(value resp.Value) resp.Value {
 		return s.handleSCard(args)
 	case "SINTER":
 		return s.handleSInter(args)
+
+	// Persistence commands
+	case "SAVE":
+		if s.persistenceHandler == nil {
+			return respError("ERR persistence not configured")
+		}
+		return s.persistenceHandler.HandleSave(args)
+	case "BGSAVE":
+		if s.persistenceHandler == nil {
+			return respError("ERR persistence not configured")
+		}
+		return s.persistenceHandler.HandleBGSave(args)
+
+	// Pub/Sub commands
+	case "PUBLISH":
+		if s.pubsubHandler == nil {
+			return respError("ERR pubsub not configured")
+		}
+		return s.pubsubHandler.HandlePublish(args)
+	case "SUBSCRIBE", "PSUBSCRIBE":
+		// SUBSCRIBE/PSUBSCRIBE require per-connection subscriber state
+		// Full integration requires refactoring handleConnection()
+		return respError("ERR SUBSCRIBE/PSUBSCRIBE not yet integrated (requires per-connection state)")
+	case "UNSUBSCRIBE", "PUNSUBSCRIBE":
+		return respError("ERR UNSUBSCRIBE/PUNSUBSCRIBE not yet integrated (requires per-connection state)")
+
+	// Transaction commands
+	case "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH":
+		// Transactions require per-connection Transaction state
+		// Full integration requires refactoring handleConnection()
+		return respError("ERR transactions not yet integrated (requires per-connection state)")
+
 	default:
 		return respError(fmt.Sprintf("ERR unknown command '%s'", cmd))
 	}

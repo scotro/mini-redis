@@ -18,7 +18,7 @@ func startTestServer(t *testing.T) (*Server, string) {
 	hashStore := store.NewHashStore()
 	setStore := store.NewSetStore()
 	cfg := Config{Port: 0} // Use port 0 to get a random available port
-	srv := New(st, listStore, hashStore, setStore, cfg)
+	srv := New(st, listStore, hashStore, setStore, nil, nil, cfg)
 
 	if err := srv.Start(); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
